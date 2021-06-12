@@ -83,14 +83,14 @@ genModule buildType mbMain imports core
                                       (text " " <-> text "// main entry:" <->
                                        ppName (unqualify name) <.> text "($std_core.id);" -- pass id for possible cps translated main
                                       ,[]))
+            paths = map squotes (map ((<.> text ".js").fst) (externalImports++mainImports)) ++ map moduleImport imports
+            names = map snd (externalImports ++ mainImports) ++ map (ppModName . importName) imports
+
         return $  text "// Koka generated module:" <+> string (showName (coreProgName core)) <.> text ", koka version:" <+> string version
-              <-> text "if (typeof define !== 'function') { var define = require('amdefine')(module) }"
-              <-> text "define(" <.> ( -- (squotes $ ppModFileName $ coreProgName core) <.> comma <->
-                   list ( {- (squotes $ text "_external"): -} (map squotes (map fst (externalImports++mainImports)) ++ map moduleImport imports)) <.> comma <+>
-                   text "function" <.> tupled ( {- (text "_external"): -} (map snd (externalImports ++ mainImports) ++ map (ppModName . importName) imports)) <+> text "{" <->
-                    vcat (
+              <-> vcat ( {- (text "_external"): -} map (\(name,path) -> text "import" <+> name <+> text "from" <+> path) (zip names paths) )
+              <-> vcat (
                     [ text "\"use strict\";"
-                    , text "var" <+> modName <+> text " = {};"
+                     , text "var" <+> modName <+> text " = {};"
                     , text " "
                     , text "// externals"
                     , externs
@@ -110,10 +110,9 @@ genModule buildType mbMain imports core
                            map (\n-> fill 12 (ppName n) <.> text ":" <+> ppName n)
                               ( exportedConstrs ++ exportedValues ))
                       ) <--> text "});"
-                    , text "return" <+> modName <.> semi
+                    , text "export default" <+> modName
                     ])
-                 )
-              <-> text "});"
+
   where
     modName         = ppModName (coreProgName core)
     exportedValues  = let f (DefRec xs)   = map defName xs
@@ -134,20 +133,20 @@ genModule buildType mbMain imports core
 
 moduleImport :: Import -> Doc
 moduleImport imp
-  = squotes (text (if null (importPackage imp) then "." else importPackage imp) <.> text "/" <.> text (moduleNameToPath  (importName imp)))
+  = squotes (text (if null (importPackage imp) then "." else importPackage imp) <.> text "/" <.> text (moduleNameToPath  (importName imp)) <.> text ".js")
 
 includeExternal ::  BuildType -> External -> [Doc]
 includeExternal buildType  ext
   = case externalImportLookup JS buildType "include-inline" ext of
       Just content -> [align $ vcat $! map text (lines content)]
       _ -> []
-      
+
 
 
 importExternal :: BuildType -> External -> [(Doc,Doc)]
 importExternal buildType  ext
   = case externalImportLookup JS buildType  "library" ext of
-      Just path -> [(text path, case externalImportLookup JS buildType  "library-id" ext of 
+      Just path -> [(text path, case externalImportLookup JS buildType  "library-id" ext of
                                   Just name -> text name
                                   Nothing   -> text path)]
       _ -> []
